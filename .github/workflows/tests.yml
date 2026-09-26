@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '8.1'
+            laravel: '^10.0'
+            testbench: '^8.22'
+            phpunit: '^10.5'
+          - php: '8.2'
+            laravel: '^11.0'
+            testbench: '^9.0'
+            phpunit: '^11.0'
+          - php: '8.2'
+            laravel: '^12.0'
+            testbench: '^10.0'
+            phpunit: '^11.0'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      # Bỏ dòng này sau khi monapay/php-sdk 0.4.0 đã có trên Packagist.
+      - run: composer config repositories.monapay vcs https://github.com/themonagroup/monapay-php
+
+      - run: >-
+          composer require --dev --no-update
+          "laravel/framework:${{ matrix.laravel }}"
+          "orchestra/testbench:${{ matrix.testbench }}"
+          "phpunit/phpunit:${{ matrix.phpunit }}"
+
+      - run: composer update --prefer-dist --no-interaction
+      - run: composer validate --strict
+      - run: composer test
