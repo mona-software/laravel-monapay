@@ -1,7 +1,9 @@
-# Ảnh chụp màn hình
+# Screenshots
 
-TODO trước khi công bố marketplace:
+Planned screenshots for this package (not added yet):
 
-- `docs/screenshot-config.png`: cấu hình `.env` và lệnh publish config.
-- `docs/screenshot-webhook.png`: webhook MONA Pay trả HTTP 200.
-- `docs/screenshot-qr.png`: VietQR động hiển thị trong ứng dụng Laravel mẫu.
+- `docs/screenshot-config.png`: the `.env` settings and the config publish command.
+- `docs/screenshot-webhook.png`: a MONA Pay webhook returning HTTP 200.
+- `docs/screenshot-qr.png`: a dynamic VietQR shown in a sample Laravel app.
+
+**MONA Pay is part of MONA Cloud by The MONA Group.**

@@ -1,21 +1,26 @@
 # MONA Pay for Laravel
 
-Composer package `monapay/laravel` cho Laravel 10, 11 và 12.
+Composer package `monapay/laravel` that lets Laravel 10, 11 and 12 applications create dynamic VietQR codes for orders and receive signed MONA Pay bank-transfer webhooks as a Laravel event.
 
-**MONA Pay xác nhận chuyển khoản ngân hàng tự động (VietQR động, tài khoản ảo, webhook) — tiền vào thẳng tài khoản của bạn, MONA Pay không giữ tiền.** Xem ngân hàng đang hỗ trợ tại [monapay.vn/ngan-hang](https://monapay.vn/ngan-hang).
+## Requirements
 
-## Tiếng Việt
+- PHP 8.1 or later
+- Laravel 10, 11 or 12
+- [`monapay/php-sdk`](https://github.com/mona-software/monapay-php) `^0.4.0` (installed automatically)
+- A MONA Pay account with API client credentials and a webhook secret
 
-### Cài đặt
+## Install
 
 ```bash
 composer require monapay/laravel
 php artisan vendor:publish --tag=monapay-config
 ```
 
-Laravel tự phát hiện `MonaPayServiceProvider` và facade `MonaPay`.
+Laravel package discovery registers `MonaPay\Laravel\MonaPayServiceProvider` and the `MonaPay` facade. The publish command copies the config to `config/monapay.php`.
 
-### Cấu hình
+## Configuration
+
+Add the credentials to `.env` (never commit this file):
 
 ```dotenv
 MONAPAY_CLIENT_ID=client-id
@@ -31,9 +36,22 @@ MONAPAY_QR_VIRTUAL_ACCOUNT_PREFIX=MONA
 MONAPAY_QR_BENEFICIARY_NAME="CONG TY MONA"
 ```
 
-Không commit `.env`. Username/password chỉ là fallback cũ; server nên dùng client ID và client secret.
+Optional variables and their defaults:
 
-### Tạo VietQR động cho đơn
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MONAPAY_TIMEOUT` | `30` | HTTP timeout in seconds |
+| `MONAPAY_WEBHOOK_ENABLED` | `true` | Register the webhook route |
+| `MONAPAY_WEBHOOK_PATH` | `monapay/webhook` | Webhook route path |
+| `MONAPAY_WEBHOOK_TOLERANCE` | `300` | Maximum timestamp skew in seconds |
+| `MONAPAY_ORDER_PREFIX` | `DH` | Prefix used to build the order code |
+| `MONAPAY_USERNAME`, `MONAPAY_PASSWORD` | – | Legacy fallback only; use client credentials on servers |
+
+Extra middleware for the webhook route can be added in `config/monapay.php` under `webhook.middleware`.
+
+## Usage
+
+### Create a dynamic VietQR for an order
 
 ```php
 use MonaPay\Laravel\Facades\MonaPay;
@@ -41,34 +59,29 @@ use MonaPay\Laravel\Facades\MonaPay;
 $qr = MonaPay::createVietQrForOrder(
     orderId: $order->getKey(),
     amount: $order->total,
-    options: ['payer_email' => $order->email],
 );
-
-return $qr['qr_image_url'];
 ```
 
-Helper gửi `orderId=DH{id}`, số tiền VND và nội dung `Thanh toan DH{id}` qua SDK chính thức.
+The helper sends `orderId=DH{id}`, the amount in VND and the transfer memo `Thanh toan DH{id}` through the official PHP SDK, and returns the API response. The order ID must be a positive integer and the amount must be between 1 and 1,000,000,000 VND. Any extra fields passed in `options` are merged into the QR request body; `orderId`, `amount` and `description` cannot be overridden. For other API calls, use `MonaPay::client()` to get the underlying `MonaPay\Client`.
 
-### Webhook và xác nhận đơn
+### Receive webhooks
 
-Package đăng ký sẵn `POST /monapay/webhook`. Khai báo URL này trên MONA Pay với kiểu `HMAC_SHA256`. Middleware kiểm chữ ký trên raw body và từ chối timestamp lệch quá 5 phút.
-
-Lắng nghe event trong `EventServiceProvider`:
+The package registers `POST /monapay/webhook` (route name `monapay.webhook`). Add this URL in MONA Pay with signature type `HMAC_SHA256`. The middleware verifies the `X-Mona-Signature` header against the raw request body and `X-Mona-Timestamp`, and rejects requests outside the timestamp tolerance (5 minutes by default). Valid incoming transactions dispatch `MonaPay\Laravel\Events\PaymentReceived`.
 
 ```php
+use Illuminate\Support\Facades\Event;
 use MonaPay\Laravel\Events\PaymentReceived;
+use MonaPay\Laravel\Support\PaymentMatcher;
 
 Event::listen(PaymentReceived::class, function (PaymentReceived $event): void {
-    $orderId = (int) \MonaPay\Laravel\Support\PaymentMatcher::extractOrderId(
-        (string) $event->payload['description']
-    );
-    $order = Order::find($orderId);
+    $orderId = PaymentMatcher::extractOrderId((string) $event->payload['description']);
+    $order = $orderId !== null ? Order::find($orderId) : null;
 
     if (!$order || !$event->matchesOrder($order->getKey(), $order->total)) {
         return;
     }
 
-    // transaction_code phải có unique index để webhook retry không xử lý hai lần.
+    // transaction_code needs a unique index so webhook retries are not processed twice.
     Payment::firstOrCreate(
         ['transaction_code' => $event->transactionCode()],
         ['order_id' => $order->getKey(), 'amount' => $event->amount()],
@@ -76,49 +89,27 @@ Event::listen(PaymentReceived::class, function (PaymentReceived $event): void {
 });
 ```
 
-Ứng dụng chỉ giao hàng sau khi nội dung khớp đúng `DH{id}`, số tiền nhận không thấp hơn tổng đơn và `transaction_code` chưa được xử lý. Payload webhook là JSON phẳng, không đọc `event.data`.
+Only fulfil an order when the memo contains exactly `DH{id}`, the received amount is not lower than the order total, and the `transaction_code` has not been processed before. The webhook payload is a flat JSON object; there is no `event.data` wrapper. If you change `MONAPAY_ORDER_PREFIX`, pass the same prefix to `extractOrderId()` and `matchesOrder()`, which default to `DH`.
 
-Kiểm tra cấu hình route và HMAC tại máy:
+To check the route and HMAC setup locally:
 
 ```bash
 php artisan monapay:test-webhook
 ```
 
-### Chạy test package
+API reference: [monapay.vn/docs](https://monapay.vn/docs).
+
+## Development
 
 ```bash
 composer install
 composer test
 ```
 
-Ảnh minh họa sẽ bổ sung tại `docs/screenshot-config.png`, `docs/screenshot-webhook.png`, `docs/screenshot-qr.png` (TODO).
-
-## English
-
-### Install and configure
-
-```bash
-composer require monapay/laravel
-php artisan vendor:publish --tag=monapay-config
-```
-
-Set `MONAPAY_CLIENT_ID`, `MONAPAY_CLIENT_SECRET`, `MONAPAY_WEBHOOK_SECRET`, and the `MONAPAY_QR_*` variables shown above. Never commit `.env`.
-
-### Flow
-
-1. Call `MonaPay::createVietQrForOrder($orderId, $amount)` to create a dynamic VietQR tied to `DH{orderId}`.
-2. Configure MONA Pay to send an `HMAC_SHA256` webhook to `POST /monapay/webhook`.
-3. The package verifies the signature and five-minute timestamp window against the unmodified body.
-4. Listen for `PaymentReceived`, require `matchesOrder()` to pass, then persist `transaction_code` uniquely before fulfilling the order.
-
-MONA Pay automatically confirms bank transfers through dynamic VietQR, virtual accounts, and webhooks. Funds go directly to your bank account; MONA Pay does not hold funds.
-
-Documentation: [monapay.vn](https://monapay.vn) · [API docs](https://monapay.vn/docs)
+CI runs PHPUnit against Laravel 10 (PHP 8.1), 11 and 12 (PHP 8.2); see `.github/workflows/tests.yml`.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
 
 **MONA Pay is part of MONA Cloud by The MONA Group.**
-
-**MONA Pay thuộc bộ MONA Cloud của The MONA Group.**
