@@ -12,8 +12,9 @@
     ],
     "authors": [
         {
-            "name": "The MONA Group",
-            "email": "info@themona.global"
+            "name": "MONA Software",
+            "email": "info@themona.global",
+            "homepage": "https://mona.media"
         }
     ],
     "require": {
@@ -60,5 +61,9 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "homepage": "https://monapay.vn/docs",
+    "support": {
+        "source": "https://github.com/mona-software/laravel-monapay"
+    }
 }

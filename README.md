@@ -118,3 +118,7 @@ Documentation: [monapay.vn](https://monapay.vn) · [API docs](https://monapay.vn
 ## License
 
 MIT
+
+**MONA Pay is part of MONA Cloud by The MONA Group.**
+
+**MONA Pay thuộc bộ MONA Cloud của The MONA Group.**
